@@ -1,0 +1,99 @@
+#
+# Author: Sinem Aytac
+# Purpose: IST687 - Final Project 
+#
+file = "https://intro-datascience.s3.us-east-2.amazonaws.com/Resort01.csv"
+data <- read.csv(file)
+
+colnames(data)
+head(data, 5)
+tail(data, 5)
+str(data)
+
+table(is.na(data)) #no NAs in the entire data set
+
+table(data$IsCanceled) #11,112 cancellations 
+
+##Exploration 1: Deposit Type
+table(data$DepositType) #NoDeposit=38,199; NonRefund=1719; Refundable=142
+
+depTypeCancel <- aggregate(data$DepositType, 
+                           list(data$IsCanceled), 
+                           table)
+
+colnames(depTypeCancel) <- c("IsCanceled", "DepositType")
+rownames(depTypeCancel) <- c("NotCancelled", "Cancelled")
+
+barplot(depTypeCancel$DepositType, beside=T,
+        ylim=c(0,max(depTypeCancel$DepositType)+5000),
+        xlab="Deposit Type", ylab="Total Numbers",
+        legend.text=rownames(depTypeCancel)
+        )
+
+#The barplot doesn't make sense at all. People who paid nonrefundable deposit have more cancellations than noncancellations. 
+#The observations are not equal. 
+
+
+##Exploration 2: Lead Time
+summary(data$LeadTime) #M=92.38 ranging 0-737 (days)
+sd(data$LeadTime) #SD=97.28
+
+boxplot(LeadTime~IsCanceled, data=data,
+        main="Number of Days Elapsed between the Entering Date of the Booking into and the Arrival Date",
+        xlab="Is Canceled?", ylab="Lead Time")
+
+#Looking at the boxplot above, there seems to be higher number of days elapsed for cancellations than non-cancellations.
+
+
+##Exploration 3: Previous Bookings & Cancellations
+summary(data$PreviousCancellations) #M=0.1 ranging 0-26
+sd(data$PreviousCancellations) #SD=1.33
+
+preCancel <- data[data$PreviousCancellations > 0,] #1095 previous cancellations
+noCancel <- data[data$PreviousBookingsNotCanceled > 0,]
+
+boxplot(PreviousCancellations~IsCanceled, data=preCancel)
+boxplot(PreviousBookingsNotCanceled~IsCanceled, data=noCancel)
+
+#People who canceled before are more likely to cancel again. 
+#This might be more apparent for people with higher number of previous cancellations.
+
+
+##Exploration 4: Market Segment
+unique(data$MarketSegment)
+
+marCancel <- aggregate(data$MarketSegment,
+                       list(data$IsCanceled),
+                       table)
+
+colnames(marCancel) <- c("IsCanceled", "MarketSegment")
+rownames(marCancel) <- c("NotCancelled", "Cancelled")
+
+barplot(marCancel$MarketSegment, beside=T,
+        ylim=c(0,15000),
+        xlab="Market Segment", ylab="Total Numbers",
+        legend.text=rownames(marCancel),
+        args.legend=list(x="topleft")
+        )
+
+#Percentages would make it clearer:
+marCancel <- aggregate(data$IsCanceled,
+                       list(data$MarketSegment),
+                       table)
+
+colnames(marCancel) <- c("MarketSegment", "Cancel")
+
+sums <- addmargins(marCancel$Cancel)
+marCancel$Sum <- sums[1:6,3]
+
+marCancel$Percent <- (marCancel$Cancel/marCancel$Sum)*100
+
+barplot(t(marCancel$Percent), beside=T, 
+        ylim=c(0,100), names.arg=marCancel$MarketSegment,
+        ylab="Percentage", xlab="Market Segment",
+        main="Percentage of Cancellations and NonCancellations across Different Market Segments",
+        legend.text=c("NonCancellation", "Cancellations"),
+        args.legend=list(x="topright"))
+
+#Online TA and Groups have more cancellations than the other groups.
+
