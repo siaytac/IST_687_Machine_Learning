@@ -1,0 +1,639 @@
+---
+title: "IST687_Final_Project"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. 
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+
+#Make sure there is nothing in your global environment and plots.
+```{r}
+rm(list=ls())
+graphics.off()
+```
+
+
+#Load the packages that you may need later.
+```{r}
+library(base)
+library(ggplot2)
+library(grid)
+library(tidyverse)
+library(rworldmap)
+```
+
+
+#Load the data and saved it to the data frame called "data". Explore the data.
+```{r}
+file = "https://intro-datascience.s3.us-east-2.amazonaws.com/Resort01.csv"
+data <- read.csv(file)
+
+colnames(data) 
+head(data, 5)
+tail(data, 5)
+
+str(data)
+
+table(data$IsCanceled) #11,112 cancellations in total
+```
+
+
+#Check if any variable has missing value as well as if any variable has a value lower than zero.
+```{r}
+null_greater_than_0 <- function(data_frame) {
+  
+  which(is.na(data))
+  col <- as.list(colnames(data))
+  
+  for (i in col) {
+    
+    if (!(identical(which(is.na(data[,i])), character(0)))) {
+      new_var <- sprintf("%s, has no null values.",i)
+      print(noquote(new_var))
+    }
+    
+    if (!all(data[,i] < 0)) {
+      new_var <- sprintf("%s, has all values greater than zero.", i)
+      print(noquote(new_var))
+      
+      cat("\n")
+    }
+  }
+}
+
+null_greater_than_0(data_frame = data)
+```
+
+
+#Further exploration of data: Summary
+```{r}
+summary(data)
+```
+
+
+#Create a new variable for overall nights each customer stayed in hotel. That is, combine StayInWeekNights and StayInWeekendNight to have a variable representing the number of total nights, regardless of week day or weekend, stayed in hotel. 
+```{r}
+data$StaysInNights <- NA #create an empty column named StayInNights
+data$StaysInNights <- data$StaysInWeekNights + data$StaysInWeekendNights
+```
+
+
+#Check for all variables how many unique variables that they have.
+```{r}
+col <- as.list(colnames(data))
+for (i in col) {
+  
+  uni <- as.list(unique(data[,i]))
+  
+  if (length(uni) > 15) {
+    
+    uni_15 <- uni[1:15]
+    print(sprintf("Unique values in %s, are: %s", i, uni_15))
+    print(sprintf("%s", uni_15))
+    
+    } else {
+    
+      print(sprintf("Unique values in %s are: %s", i, uni)) 
+      
+      }
+}
+
+```
+
+
+#Review cancellations and noncancellations separately for each variable
+```{r}
+cancelled <- subset(data, IsCanceled == 1)
+not_cancelled <- subset(data, IsCanceled == 0)
+
+summary(cancelled)
+summary(not_cancelled)
+```
+
+
+#Explore which variables are categorical and which variables are continuous. Then, create a new data frame for both types of independent variable (categorical vs. continuous).
+```{r}
+
+numeric <- c("LeadTime", "StaysInWeekendNights", "StaysInWeekNights", "StaysInNights", "Adults", "Children", "Babies", "PreviousCancellations", "PreviousBookingsNotCanceled", "BookingChanges", "RequiredCarParkingSpaces", "TotalOfSpecialRequests")
+
+categorical <- c("IsCanceled", "Meal", "Country", "MarketSegment", "IsRepeatedGuest", "ReservedRoomType" , "AssignedRoomType", "DepositType", "CustomerType")
+
+length(categorical) #9 categorical variables (including IsCanceled)
+length(numeric) #12 continuous variables (including new variable created above: StaysInNights)
+
+continuousVars <- data %>% select(numeric)
+continuousVars$IsCanceled <- as.factor(data$IsCanceled) #Add the DV to this data set, too!
+
+categoricalVars <- data %>% select(categorical)
+
+str(continuousVars)
+str(categoricalVars)
+
+for (i in categorical) {
+  categoricalVars[,i] <- as.factor(categoricalVars[,i])
+}
+
+class(categoricalVars$IsCanceled)
+```
+
+
+#Check the distribution of each continuous variable: Is the data normally distributed? 
+```{r}
+histogram_boxplot <- function(arg1, x_title) {
+  
+  list <- as.list(arg1)
+  
+  p2 <- ggplot(data, aes(x = arg1)) + 
+    geom_histogram(color = 'black', fill = 'white', bins =50) +
+    geom_vline(aes(xintercept=mean(unlist(list))), color="blue", linetype="dashed") +
+    ggtitle(cat("Histogram for", x_title)) + xlab(x_title)
+  
+  p1 <- ggplot(data, aes(y = arg1)) + geom_boxplot() + ylab(x_title) +
+    geom_hline(yintercept=mean(unlist(list)), linetype="dashed", color = "blue") +  
+    coord_flip() + grid.newpage()
+  
+  return(grid.draw(rbind(ggplotGrob(p1), ggplotGrob(p2), size = "last")))
+  
+} #get the two graphs on the same x-axis line 
+
+for (i in numeric) {
+  
+  print(histogram_boxplot(continuousVars[,i], i))
+
+}
+```
+
+
+#Transform the necessary data that are not normally distributed. Then, again check for the distributions via histograms.
+```{r}
+library(moments)
+
+#Remove zeros from Lead Time? No, because there are cancellation when lead time == 0.
+
+for (i in numeric){
+  continuousVars[,i] <- sqrt(continuousVars[,i])
+}
+# < 0 skewed left (left tail)
+# > 0 skewed right (right tail)
+# = 0 normal
+
+for (i in numeric){
+  print(histogram_boxplot(continuousVars[,i], i))
+  print(skewness(continuousVars[,i]))
+}
+
+```
+
+
+#Bivariate analysis: Correlation between each continuous variable with another continuous variable. 
+```{r}
+correlation <- round(cor(continuousVars[, numeric]),2)
+correlation
+
+library(reshape2)
+
+melted_cormat <- melt(correlation)
+head(melted_cormat)
+
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
+#Create boxplots for continuous variables to see if there is any difference in the data between cancellations and non-cancellations. 
+```{r}
+library(gapminder)
+
+for (i in numeric) {
+  print(ggplot(continuousVars, (aes(x = IsCanceled, y = continuousVars[,i]))) +
+          geom_boxplot(fill=c("deepskyblue", "firebrick2")) + 
+          ylab(i) + 
+          stat_summary(fun = mean, geom = "errorbar", 
+                       aes(ymax = ..y.., ymin = ..y..),
+                       width = .75, linetype = "dashed"))
+  }
+
+
+#data %>% group_by(floor(Adults)) %>% summarize(count=n())
+
+#Notes: LeadTime, StayInWeekNights, StaysInWeekendNights, StayInNights seem interesting.
+
+```
+
+
+#Create bar graphs for categorical variables to check if there is any difference in number of cancellations and non-cancellations for different levels of each categorical variable.
+```{r}
+for (i in categorical[-1]) {
+  print(ggplot(categoricalVars, (aes(x = categoricalVars[,i], fill=IsCanceled))) +
+          geom_bar(position=position_dodge()) + 
+          xlab(i) + ylab("Frequency") +
+          scale_fill_manual(values=c("deepskyblue", "firebrick2"))
+        )
+  }
+
+```
+
+
+#Create bar plots with percentages to be able to see the pattern better.
+```{r}
+for (i in categorical[-1]) {
+  
+  #Find percentages for each level
+  var <- categoricalVars %>% group_by(categoricalVars[,i], IsCanceled) %>% 
+    summarize(count=n()) %>% 
+    mutate(percentage=count/sum(count)*100)
+  
+  #Plot it
+  print(ggplot(var, aes(x=`categoricalVars[, i]`, y=percentage, fill=IsCanceled)) +
+          geom_bar(stat="identity",position=position_dodge()) +
+          xlab(i) + ylab("Relative Frequency") +
+          ylim(c(0,100)) +
+          scale_fill_manual(values=c("deepskyblue", "firebrick2"))
+    )
+}
+
+#Note: Market Segment: Online TA and Groups have more cancellations compared to the other groups.
+
+#Meal: FB-Full Board (breakfast, lunch, dinner) seems to have higher cancellations but the frequency of it is so small. 
+categoricalVars %>% group_by(Meal) %>% summarize(count=n()) #There are only 754 FB.
+
+#Deposit Type: Although non-refundable hotel reservations seem to have more cancellations but again the total number of data points for that category is so small.
+categoricalVars %>% group_by(DepositType) %>% summarize(count=n()) #1719 non-refundable deposit
+
+#IsRepeatedGuess: Being a repeated guess might mean less cancellations but I don't believe we have enough data for comparison. 
+categoricalVars %>% group_by(IsRepeatedGuest) %>% summarize(count=n()) #1778 repeated guests vs. 38,282 non-repeaetd guests.
+
+```
+
+
+#Run logistic regression to see which variables significantly predict cancellations in hotel reservations.
+```{r}
+glm_data <- cbind(continuousVars[,numeric], categoricalVars) #let's put them back together
+str(glm_data)
+
+model <- glm(IsCanceled~LeadTime+StaysInNights+TotalOfSpecialRequests+MarketSegment, data=glm_data, family="binomial")
+
+summary(model)
+
+#Check Multicollinearity
+library(car)
+vif(model) #No value is greater than 5.
+```
+
+
+#Let's explore the variables: 
+#1) Market Segment as a predictor of cancellation
+```{r}
+##Market Segment:
+
+#Looking at the model, Direct, Offline TA/TO, and Online TA are significantly different than the reference point (Complementary). For example, the odds for a reservation being canceled ~45% less if made through Direct platforms rather than Complementary platforms. Similarly, the odds for a cancellation ~70% less if made through Offline platforms rather than Complementary platforms. On the other hand, reservation through Online platforms increases the odds of a cancellation by ~95% compared to Complementary platforms. (When everything else is controlled)
+
+#Let's see the probability of cancellations for each market segment
+logodds <- predict(model, data.frame(LeadTime=0, StaysInNights=0, TotalOfSpecialRequests=0, MarketSegment=glm_data$MarketSegment))
+
+odds <- exp(logodds) #odds
+prob <- odds/(1+odds) #probabilities
+
+cbind(unique(glm_data$MarketSegment), unique(prob)) 
+table(unique(prob), unique(glm_data$MarketSegment))
+
+#Slightly shorter way (it gives the same results as above):
+predictedProbs <- predict(model, data.frame(LeadTime=0, StaysInNights=0, TotalOfSpecialRequests=0, MarketSegment=unique(glm_data$MarketSegment)), type="response")
+
+#Interpretation:
+#Holding the lead time, stays in nights, and total number of special requests constant at zero, Online bookings have ~25% chance of cancellation, Groups have ~13% chance of cancellation, Corporates have ~10% chance of cancellation, and Complementaries have ~15% chance of cancellation; whereas Direct bookings have only ~9% and Offline bookings have only ~5% chance of cancellation.
+
+marSeg <- data.frame(category=unique(data$MarketSegment), probs=predictedProbs)
+
+ggplot(marSeg, aes(x=probs, y=category)) +
+  geom_bar(stat="identity", fill="gray45") + 
+  xlab("Probability of Cancellation") + ylab("Market Segment") + 
+  theme_minimal() + theme(text = element_text(size = 14)) +
+  xlim(c(0,1))
+
+
+#Overall, looking at the predictions above, we expect higher chance of cancellation when the reservation is made through Online than through Offline platforms, for example.
+off <- predictedProbs[4]
+on <- predictedProbs[3]
+
+odds_ratio <- (on/(1-on)) / (off/(1-off)) #6.5 times more likely 
+
+
+#Let's see when setting the lead time, stays in week nights, total # of special requests to their means:
+predictedProbs <- predict(model, data.frame(LeadTime=sqrt(mean(data$LeadTime)), StaysInNights=sqrt(mean(data$StaysInNights)), TotalOfSpecialRequests=sqrt(mean(data$TotalOfSpecialRequests)), MarketSegment=unique(glm_data$MarketSegment)), type="response")
+
+predictedProbs
+
+#Holding the lead time, stays in nights, and total number of special requests constant at their mean, Online bookings have ~39% chance of cancellation, Groups have ~22% chance of cancellation, Corporates have ~18% chance of cancellation, and Complementaries have ~24% chance of cancellation; whereas Direct bookings have only 15% and Offline bookings have only 9% chance of cancellation.
+```
+
+
+#2) Lead Time as a predictor of cancellation
+```{r}
+##LeadTime:
+exp(coef(model)[2])
+#Every one day passed after the reservation has been made increases the odds of cancellation by ~13%. (When everything else is controlled)
+
+#create a data frame to save the things below
+leadtimeProbs <- data.frame(category=unique(data$MarketSegment))
+
+#Lead Time = 10 days
+leadtimeProbs$day10 <- predict(model, data.frame(LeadTime=sqrt(10), StaysInNights=0, TotalOfSpecialRequests=0, MarketSegment=unique(glm_data$MarketSegment)), type="response") 
+
+#Lead Time = 30 days
+leadtimeProbs$day30 <- predict(model, data.frame(LeadTime=sqrt(30), StaysInNights=0, TotalOfSpecialRequests=0, MarketSegment=unique(glm_data$MarketSegment)), type="response") 
+
+#Lead Time = 182 (6 months)
+leadtimeProbs$month6 <- predict(model, data.frame(LeadTime=sqrt(182), StaysInNights=0, TotalOfSpecialRequests=0, MarketSegment=unique(glm_data$MarketSegment)), type="response") 
+
+#Lead Time = A year (365 days)
+leadtimeProbs$year <- predict(model, data.frame(LeadTime=sqrt(365), StaysInNights=0, TotalOfSpecialRequests=0, MarketSegment=unique(glm_data$MarketSegment)), type="response") 
+
+leadtimeProbs 
+#After a year lead time, people will be more likely to cancel their hotel reservations except if they did it through offline platforms.
+
+#Find the increase in probability
+forggplot <- leadtimeProbs
+forggplot$day30 <- leadtimeProbs$day30 - leadtimeProbs$day10
+forggplot$month6 <- leadtimeProbs$month6 - leadtimeProbs$day30
+forggplot$year <- leadtimeProbs$year - leadtimeProbs$month6
+
+library(reshape2)
+forggplot <- forggplot %>% melt(id.vars="category")
+
+ggplot(forggplot, aes(x=value, y=category, fill=variable)) + 
+  geom_bar(stat="identity", position=position_stack(reverse=T)) +
+  xlab("Probability of Cancellation") + ylab("Market Segments") +
+  theme_minimal() + theme(text = element_text(size = 14)) +
+  xlim(c(0,1)) + geom_vline(xintercept = 0.5, color="black", size=1, linetype="dashed") +
+  scale_fill_manual(values=c("firebrick4", "firebrick3", "firebrick2", "firebrick1"), labels=c("10 Days", "1 Month", "6 Months", "1 Year")) +
+  guides(fill=guide_legend(title="Lead Time"))
+  
+
+```
+
+
+#3)Stays in nights as a predictor of cancellation
+```{r}
+##StaysInNights
+coef(model)[3]
+exp(coef(model)[3])
+#Every one more night stayed in the hotel increases the odds of cancellation by ~7%. (When everything else is constant.)
+
+#It's not a strong predictor. 
+
+```
+
+
+#4)Total # of Special Requests as a predictor of cancellation
+```{r}
+#TotalOfSpecialRequests
+coef(model)[4]
+1-exp(coef(model)[4])
+#Every additional special request by customers decreases the odds of cancellation by ~58%. (When everything else is constant.)
+
+specialProbs <- data.frame(category=unique(data$MarketSegment))
+
+#Let's find out the probability of cancellation when lead time equals to zero, stays in nights equals to average nights people stay in a hotel (~4 days):
+specialProbs$No <- predict(model, data.frame(LeadTime=0, StaysInNights=sqrt(mean(data$StaysInNights)), TotalOfSpecialRequests=0, MarketSegment=unique(data$MarketSegment)), type="response")
+
+specialProbs$One <- predict(model, data.frame(LeadTime=0, StaysInNights=sqrt(mean(data$StaysInNights)), TotalOfSpecialRequests=1, MarketSegment=unique(data$MarketSegment)), type="response")
+
+specialProbs$Two <- predict(model, data.frame(LeadTime=0, StaysInNights=sqrt(mean(data$StaysInNights)), TotalOfSpecialRequests=2, MarketSegment=unique(data$MarketSegment)), type="response")
+
+specialProbs$Three <- predict(model, data.frame(LeadTime=0, StaysInNights=sqrt(mean(data$StaysInNights)), TotalOfSpecialRequests=3, MarketSegment=unique(data$MarketSegment)), type="response")
+
+#Let's plot it
+ggplotSpecial <- specialProbs
+ggplotSpecial <- ggplotSpecial %>% melt(id.vars="category")
+
+ggplot(ggplotSpecial, aes(x=category, y=value, fill=variable)) + 
+  geom_bar(stat="identity", position=position_dodge()) +
+  ylab("Probability of Cancellation") + xlab("Market Segments") +
+  theme_minimal() + theme(text = element_text(size = 14)) +
+  ylim(c(0,0.5)) + geom_hline(yintercept = 0.5, color="black", size=1, linetype="dashed") +
+  scale_fill_manual(values=c("deepskyblue", "deepskyblue4", "gray55", "gray45"), labels=c("0", "1", "2", "3")) +
+  guides(fill=guide_legend(title="Special Requests"))
+
+
+#I wanna see when lead time equals to average lead time (~3 months)
+specialProbsLead <- data.frame(category=unique(data$MarketSegment))
+
+specialProbsLead$No <- predict(model, data.frame(LeadTime=sqrt(mean(data$LeadTime)), StaysInNights=sqrt(mean(data$StaysInNights)), TotalOfSpecialRequests=0, MarketSegment=unique(data$MarketSegment)), type="response")
+
+specialProbsLead$One <- predict(model, data.frame(LeadTime=sqrt(mean(data$LeadTime)), StaysInNights=sqrt(mean(data$StaysInNights)), TotalOfSpecialRequests=1, MarketSegment=unique(data$MarketSegment)), type="response")
+
+specialProbsLead$Two <- predict(model, data.frame(LeadTime=sqrt(mean(data$LeadTime)), StaysInNights=sqrt(mean(data$StaysInNights)), TotalOfSpecialRequests=2, MarketSegment=unique(data$MarketSegment)), type="response")
+
+specialProbsLead$Three <- predict(model, data.frame(LeadTime=sqrt(mean(data$LeadTime)), StaysInNights=sqrt(mean(data$StaysInNights)), TotalOfSpecialRequests=3, MarketSegment=unique(data$MarketSegment)), type="response")
+
+#Let's plot it
+ggplotSpecialLead <- specialProbsLead
+ggplotSpecialLead <- ggplotSpecialLead %>% melt(id.vars="category")
+
+ggplot(ggplotSpecialLead, aes(x=category, y=value, fill=variable)) + 
+  geom_bar(stat="identity", position=position_dodge()) +
+  ylab("Probability of Cancellation") + xlab("Market Segments") +
+  theme_minimal() + theme(text = element_text(size = 14)) +
+  ylim(c(0,1)) + geom_hline(yintercept = 0.5, color="black", size=1, linetype="dashed") +
+  scale_fill_manual(values=c("deepskyblue", "deepskyblue4", "gray55", "gray45"), labels=c("0", "1", "2", "3")) +
+  guides(fill=guide_legend(title="Special Requests"))
+
+```
+
+
+#Map Idea: Cancellation Rates for each country
+```{r}
+#Find cancellation and non-cancellation rate for each country
+byCountry <- data %>% group_by(Country, IsCanceled) %>% summarize(count=n()) %>% mutate(cancelRate=count/sum(count))
+
+#Cancellation rate in each Country
+CancellationRatebyCountry <- byCountry[byCountry$IsCanceled == 1,]
+
+#Some countries only have only one data point which is canceled. I'm not sure if we should keep them in the data. 1) We can either simply remove them from the cancellation rate data file or 2) we can set a value (e.g., 5) and remove any country which has less than 5 data points.
+
+#1) Remove countries which has cancellation rate equals to 1.
+noCancellationRateEqualto1 <- CancellationRatebyCountry[CancellationRatebyCountry$cancelRate != 1,]
+```
+
+
+#Plotting maps for key driver variables including Lead time, StayInWeekendNights, StayInWeekNights and StaysInNights
+```{r}
+#Filter data for only Cancellations using raw data
+map_data_CL <- data %>% filter(IsCanceled==1)
+
+
+#Filter data for no Cancellations using raw data
+map_data_NoCL <- data %>% filter(IsCanceled==0)
+
+#Join data with the map using the joinCountryData2Map() function for both cancellations and no cancellations
+#********(Takes a while to run)**********
+joinData_CL <- joinCountryData2Map( map_data_CL,joinCode = "NAME",nameJoinColumn = "Country")
+joinData_NoCL <- joinCountryData2Map( map_data_NoCL,joinCode = "NAME",nameJoinColumn = "Country")
+
+#Heat map showing for lead time for cancellations.
+leadTimeMapCL <- mapCountryData( joinData_CL, 
+                                 nameColumnToPlot="LeadTime",
+                                 addLegend=FALSE,
+                                 oceanCol = 'lightblue', 
+                                 missingCountryCol = 'white',
+                                 mapTitle = "Number of days elapsed before Cancellation"
+                                )
+do.call( addMapLegend, c(leadTimeMapCL, legendWidth=1, legendMar = 2))
+
+
+#Heat map showing for lead time for No cancellations.
+leadTimeMapNoCL <- mapCountryData( joinData_NoCL, 
+                                 nameColumnToPlot="LeadTime",
+                                 addLegend=FALSE, 
+                                 mapTitle = "Number of days elapsed: No Cancellations", 
+                                 oceanCol = 'lightblue', 
+                                 missingCountryCol = 'white')
+do.call( addMapLegend, c(leadTimeMapNoCL, legendWidth=1, legendMar = 2))
+```
+
+
+#Map showing a high number of lead time days for cancellation of bookings for clients from Europe
+```{r}
+europe <- mapCountryData( joinData_CL, 
+                          nameColumnToPlot="LeadTime", 
+                          mapRegion ="Europe", addLegend=FALSE, 
+                          mapTitle = "High LeadTime cancellations in Europe",
+                          oceanCol = 'lightblue', 
+                          missingCountryCol = 'white'
+                          )
+do.call( addMapLegend, c(weekendNights, legendWidth=1, legendMar = 2))
+```
+
+
+#Plotting maps for StayInWeekNights, StayInWeekendNights and StaysInNights
+```{r}
+#library(rworldmap)
+#library(tidyverse)
+
+#Map showing the number of stay in weekend nights
+weekendNights <- mapCountryData( joinData_CL, 
+                                 nameColumnToPlot="StaysInWeekendNights", 
+                                 addLegend=FALSE, 
+                                 mapTitle = "Stay In Weekend Nights for clients that cancelled",
+                                 oceanCol = 'lightblue',
+                                 missingCountryCol = 'white')
+do.call( addMapLegend, c(weekendNights, legendWidth=1, legendMar = 2))
+
+#Map showing the number of stay in week nights
+weekNights <- mapCountryData( joinData_CL, 
+                              nameColumnToPlot="StaysInWeekNights", 
+                              addLegend=FALSE,
+                              mapTitle = "Stay In Week Nights for clients that cancelled", 
+                              oceanCol = 'lightblue',
+                              missingCountryCol = 'white')
+do.call( addMapLegend, c(weekNights, legendWidth=1, legendMar = 2))
+
+#Map showing the number of stay in week nights
+Nights <- mapCountryData( joinData_CL, 
+                          nameColumnToPlot="StayInNights", 
+                          addLegend=FALSE,
+                          mapTitle = "Stay In Nights for clients that cancelled",
+                          oceanCol = 'lightblue',
+                          missingCountryCol = 'white')
+do.call( addMapLegend, c(Nights, legendWidth=1, legendMar = 2))
+
+```
+
+
+#Plotting maps for key driver variables including Lead time, StayInWeekendNights, StayInWeekNights and StaysInNights
+```{r}
+#Filter data for only Cancellations using raw data
+map_data_CL <- data %>% filter(IsCanceled==1)
+
+
+#Filter data for no Cancellations using raw data
+map_data_NoCL <- data %>% filter(IsCanceled==0)
+
+#Join data with the map using the joinCountryData2Map() function for both cancellations and no cancellations
+#********(Takes a while to run)**********
+joinData_CL <- joinCountryData2Map( map_data_CL,joinCode = "NAME",nameJoinColumn = "Country")
+joinData_NoCL <- joinCountryData2Map( map_data_NoCL,joinCode = "NAME",nameJoinColumn = "Country")
+
+#Heat map showing for lead time for cancellations.
+leadTimeMapCL <- mapCountryData( joinData_CL, 
+                                 nameColumnToPlot="LeadTime",
+                                 addLegend=FALSE,
+                                 oceanCol = 'lightblue', 
+                                 missingCountryCol = 'white',
+                                 mapTitle = "Number of days elapsed before Cancellation"
+                                )
+do.call( addMapLegend, c(leadTimeMapCL, legendWidth=1, legendMar = 2))
+
+
+#Heat map showing for lead time for No cancellations.
+leadTimeMapNoCL <- mapCountryData( joinData_NoCL, 
+                                 nameColumnToPlot="LeadTime",
+                                 addLegend=FALSE, 
+                                 mapTitle = "Number of days elapsed: No Cancellations", 
+                                 oceanCol = 'lightblue', 
+                                 missingCountryCol = 'white')
+do.call( addMapLegend, c(leadTimeMapNoCL, legendWidth=1, legendMar = 2))
+```
+
+
+#Map showing a high number of lead time days for cancellation of bookings for clients from Europe
+```{r}
+europe <- mapCountryData( joinData_CL, 
+                          nameColumnToPlot="LeadTime", 
+                          mapRegion ="Europe", addLegend=FALSE, 
+                          mapTitle = "High LeadTime cancellations in Europe",
+                          oceanCol = 'lightblue', 
+                          missingCountryCol = 'white'
+                          )
+do.call( addMapLegend, c(europe, legendWidth=1, legendMar = 2))
+```
+
+
+
+#Plotting maps for StayInWeekNights, StayInWeekendNights and StaysInNights
+```{r}
+#Map showing the number of stay in weekend nights
+weekendNights <- mapCountryData( joinData_CL, 
+                                 nameColumnToPlot="StaysInWeekendNights", 
+                                 addLegend=FALSE, 
+                                 mapTitle = "Stay In Weekend Nights for clients that cancelled",
+                                 oceanCol = 'lightblue',
+                                 missingCountryCol = 'white')
+do.call( addMapLegend, c(weekendNights, legendWidth=1, legendMar = 2))
+
+#Map showing the number of stay in week nights
+weekNights <- mapCountryData( joinData_CL, 
+                              nameColumnToPlot="StaysInWeekNights", 
+                              addLegend=FALSE,
+                              mapTitle = "Stay In Week Nights for clients that cancelled", 
+                              oceanCol = 'lightblue',
+                              missingCountryCol = 'white')
+do.call( addMapLegend, c(weekNights, legendWidth=1, legendMar = 2))
+
+#Map showing the number of stay in week nights
+Nights <- mapCountryData( joinData_CL, 
+                          nameColumnToPlot="StayInNights", 
+                          addLegend=FALSE,
+                          mapTitle = "Stay In Nights for clients that cancelled",
+                          oceanCol = 'lightblue',
+                          missingCountryCol = 'white')
+do.call( addMapLegend, c(Nights, legendWidth=1, legendMar = 2))
+
+```
+
